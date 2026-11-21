@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>聖誕交換禮物</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@600;900&display=swap">
+<style>
+:root{--ink:#1d2420;--bg:#f5f6f2;--red:#b3202a;--pine:#1f4d3a;--gold:#c9a24a;--line:#d5d9d0}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 system-ui,"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif}
+.wrap{max-width:480px;margin:0 auto;padding:0 20px 48px;position:relative}
+.ribbon{position:absolute;top:0;left:50%;width:34px;height:120px;margin-left:-17px;background:var(--red)}
+.ribbon::after{content:"";position:absolute;bottom:-14px;left:0;border:17px solid transparent;border-top:14px solid var(--red);border-bottom:0}
+h1{font:900 34px/1.2 "Noto Serif TC",serif;text-align:center;margin:0;padding:150px 0 6px;color:var(--pine)}
+.sub{text-align:center;color:#5b655e;margin:0 0 24px}
+.tabs{display:flex;border:2px solid var(--pine);border-radius:8px;overflow:hidden;margin-bottom:20px}
+.tabs button{flex:1;padding:10px;border:0;background:transparent;font:inherit;color:var(--pine);cursor:pointer}
+.tabs button[aria-selected=true]{background:var(--pine);color:#fff}
+section{display:none}section.on{display:block}
+label{display:block;font-weight:600;margin:14px 0 4px}
+input,textarea{width:100%;padding:10px 12px;font:inherit;border:1.5px solid var(--line);border-radius:6px;background:#fff}
+textarea{min-height:90px}
+input:focus,textarea:focus,button:focus-visible{outline:3px solid var(--gold);outline-offset:1px}
+.go{margin-top:18px;width:100%;padding:12px;border:0;border-radius:6px;background:var(--red);color:#fff;font:600 17px inherit;cursor:pointer}
+.go:disabled{opacity:.5}
+.msg{margin-top:16px;padding:12px 14px;border-left:4px solid var(--gold);background:#fff;min-height:1em}
+.msg.err{border-color:var(--red)}
+.result{font:900 30px "Noto Serif TC",serif;color:var(--red);margin:6px 0}
+.hint{font-size:14px;color:#5b655e;margin:4px 0 0}
+ul{padding-left:20px;margin:8px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="ribbon"></div>
+<h1>聖誕交換禮物</h1>
+<p class="sub" id="status">載入中…</p>
+<div class="tabs" role="tablist">
+  <button role="tab" data-t="reg" aria-selected="true">報名</button>
+  <button role="tab" data-t="get" aria-selected="false">查詢對象</button>
+  <button role="tab" data-t="adm" aria-selected="false">主辦人</button>
+</div>
+
+<section id="reg" class="on">
+  <label for="rn">你的名字</label><input id="rn" maxlength="20" autocomplete="off">
+  <label for="rp">自訂密碼（至少 4 碼，查詢結果時要用）</label><input id="rp" type="password" autocomplete="off">
+  <p class="hint">請記住密碼，忘記就只能請主辦人處理。</p>
+  <button class="go" id="rb">報名</button>
+  <div class="msg" id="rm"></div>
+</section>
+
+<section id="get">
+  <label for="gn">你的名字</label><input id="gn" autocomplete="off">
+  <label for="gp">你的密碼</label><input id="gp" type="password" autocomplete="off">
+  <button class="go" id="gb">查看我要送給誰</button>
+  <div class="msg" id="gm"></div>
+</section>
+
+<section id="adm">
+  <label for="ap">主辦人密碼</label><input id="ap" type="password" autocomplete="off">
+  <button class="go" id="al" style="background:var(--pine)">載入報名名單</button>
+  <div class="msg" id="alist"></div>
+  <label for="ax">不能互抽的配對（每行一組，用逗號分隔）</label>
+  <textarea id="ax" placeholder="小明,小美&#10;阿強,阿花"></textarea>
+  <button class="go" id="ad">抽籤（只能抽一次）</button>
+  <div class="msg" id="am"></div>
+</section>
+</div>
+
+<script>
+// ↓↓ 換成你自己的 Supabase 專案網址與 anon（publishable）key，絕對不要放 service_role key
+const SB_URL = 'https://czrqehpboaowgucixhpi.supabase.co';
+const SB_KEY = 'sb_publishable__IN2rtAkNrFMesMUjrEbHg_UHcSfLsb';
+// ↑↑
+const $ = id => document.getElementById(id);
+async function rpc(fn, args = {}) {
+  const r = await fetch(`${SB_URL}/rest/v1/rpc/${fn}`, {
+    method: 'POST',
+    headers: { apikey: SB_KEY, ...(SB_KEY.startsWith('sb_') ? {} : { Authorization: 'Bearer ' + SB_KEY }), 'Content-Type': 'application/json' },
+    body: JSON.stringify(args)
+  });
+  if (!r.ok) throw new Error(r.status + ' ' + await r.text());
+  return r.json();
+}
+function say(id, text, err) { const e = $(id); e.textContent = text; e.className = 'msg' + (err ? ' err' : ''); }
+async function busy(btn, fn) { btn.disabled = true; try { await fn(); } catch (e) { say(btn.dataset.m, '連線失敗：' + e.message, true); } btn.disabled = false; }
+
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', x === b));
+  document.querySelectorAll('section').forEach(s => s.classList.toggle('on', s.id === b.dataset.t));
+});
+
+async function refresh() {
+  try {
+    const s = await rpc('get_status');
+    $('status').textContent = s.drawn ? `抽籤完成，共 ${s.count} 人參加` : `報名中，目前 ${s.count} 人`;
+  } catch (e) { $('status').textContent = '尚未連上資料庫，請檢查設定'; }
+}
+
+$('rb').dataset.m = 'rm';
+$('rb').onclick = () => busy($('rb'), async () => {
+  const r = await rpc('register', { p_name: $('rn').value, p_pin: $('rp').value });
+  const t = { ok: '報名成功！請記住你的名字與密碼。', duplicate: '這個名字已有人報名，請加上暱稱或姓氏。',
+    closed: '已經抽籤，無法再報名。', invalid: '名字需 1–20 字，密碼至少 4 碼。' };
+  say('rm', t[r] || '發生錯誤', r !== 'ok'); refresh();
+});
+
+$('gb').dataset.m = 'gm';
+$('gb').onclick = () => busy($('gb'), async () => {
+  const r = await rpc('get_target', { p_name: $('gn').value, p_pin: $('gp').value });
+  if (r === '__not_drawn') return say('gm', '還沒抽籤，請等主辦人通知。', true);
+  if (r === '__wrong') return say('gm', '名字或密碼不正確。', true);
+  const m = $('gm'); m.className = 'msg'; m.textContent = '你要送禮物給：';
+  const d = document.createElement('div'); d.className = 'result'; d.textContent = r; m.appendChild(d);
+  const p = document.createElement('div'); p.className = 'hint'; p.textContent = '請保密，到交換禮物當天再揭曉！'; m.appendChild(p);
+});
+
+$('al').dataset.m = 'alist';
+$('al').onclick = () => busy($('al'), async () => {
+  const names = await rpc('admin_list', { p_admin: $('ap').value });
+  const m = $('alist'); m.className = 'msg'; m.textContent = `共 ${names.length} 人：`;
+  const u = document.createElement('ul');
+  names.forEach(n => { const li = document.createElement('li'); li.textContent = n; u.appendChild(li); });
+  m.appendChild(u);
+}).catch?.(() => {});
+
+$('ad').dataset.m = 'am';
+$('ad').onclick = () => busy($('ad'), async () => {
+  if (!confirm('確定要抽籤嗎？抽完就不能重抽，也不能再報名。')) return;
+  const pairs = $('ax').value.split('\n').map(l => l.split(/[,，]/).map(s => s.trim())).filter(p => p.length === 2 && p[0] && p[1]);
+  const r = await rpc('do_draw', { p_admin: $('ap').value, p_pairs: pairs });
+  const t = { ok: '抽籤完成！請通知大家到「查詢對象」頁面查看。', forbidden: '主辦人密碼不正確。', already: '已經抽過籤了。',
+    too_few: '至少需要 3 人才能抽籤。', impossible: '排除條件太多，找不到可行的配對，請減少排除組合。' };
+  say('am', t[r] || '發生錯誤', r !== 'ok'); refresh();
+});
+refresh();
+</script>
+</body>
+</html>
